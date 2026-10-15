@@ -48,3 +48,8 @@ __pycache__/
 # Per-machine IDE state
 .vscode/*.log
 .vscode/.browse.VC.db*
+
+# MaixCam Vision generated content and local network configuration
+**/dist/
+**/__pycache__/
+**/wifi_config.py

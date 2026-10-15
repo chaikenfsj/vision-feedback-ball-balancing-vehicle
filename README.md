@@ -1,87 +1,41 @@
-# 2026 NUEDC H — MSPM0G3507 Ball-Balancing Control Firmware
+# 2026 NUEDC H — 车载平衡滚球运动控制系统
 
-2026 年全国大学生电子设计竞赛 H 题滚球控制系统的 MCU 端固件。仓库整理范围是控制端 Q2–Q6：底盘行程、球位置控制、静态恢复、动态车球控制和任意起点目标保持。第 1 问属于独立视觉侧；本仓库只包含 MCU 侧 UART3 接收与视觉帧有效性处理，不包含视觉模块算法/固件。
+本仓库整理了 2026 年全国大学生电子设计竞赛 H 题的两个实现部分：MaixCam Pro 视觉定位（Q1）和 MSPM0G3507 主控闭环控制（Q2–Q6）。系统使用摄像头检测摆杆凹槽中的钢球位置，经 UART 传给主控，再由主控完成小车循迹、摆杆调节和车球协同控制。
 
-This repository contains the MCU-side control firmware for the 2026 NUEDC H ball-balancing project. It covers the implemented Q2–Q6 control paths. The independent Q1 vision algorithm/firmware is out of scope; the MCU-side UART3 interface and frame validation are included.
+赛题要求小车沿环形黑色路线行驶，并让钢球保持在凹槽内指定位置。摆杆长度为 25 cm，视觉模块覆盖整个凹槽，用于显示和记录钢球运动。
 
-## Project at a glance
+## 目录
 
-- MCU: TI MSPM0G3507, bare-metal cooperative main loop and timer-driven control tick.
-- Actuator: X42S stepper using the X firmware protocol; chassis drive and pendulum actuation are separate software paths.
-- Application layers: `user/app/q3`, `user/app/q4`, `user/app/q6`; foreground key, display and telemetry adapters in `user/app`; board services in `user/bsp`; device/protocol code in `user/code`.
-- `main.c` remains the composition root for startup, key-to-mode routing, and the original fast-path order. ISR-event debounce, Q4/Q5/Q6 status rendering, and periodic diagnostic cadence are isolated in `user/app/app_key_input.*`, `user/app/app_status_display.*`, and `user/app/app_telemetry.*`.
-- Configuration source: `empty.syscfg`; generated `ti_msp_dl_config.c/.h` are checked in for the current project setup and must not be hand-edited.
-- Build: CMake + Ninja + Arm GNU toolchain, with Debug and Release presets.
+```text
+车载平衡滚球运动控制系统/
+├── 视觉Q1_MaixCamPro/       # MaixCam Vision 工程：钢球检测、标定、图传和 UART 回传
+└── Q2-Q6_MSPM0主控/         # MSPM0G3507 固件：Q2 至 Q6 的控制和硬件接口
+```
 
-## Capabilities in this firmware
-
-| Area | Code location | Scope |
+| 部分 | 硬件/环境 | 作用 |
 |---|---|---|
-| Q2 | `user/bsp/lap_trace.*`, `user/main.c` | Chassis lap/route exercise selected through the existing key path. |
-| Q3 | `user/app/q3/` | Ball-state estimation, position control, pendulum geometry/calibration, and the Q3 sequence. The control behavior and tuned values are preserved; source formatting is normalized. |
-| Q4 | `user/app/q4/q45_vehicle_control.*` | Static vehicle route and ball recovery/hold behavior. |
-| Q5 | `user/app/q4/q5_*`, `q45_vehicle_control.*` | Dynamic vehicle/ball control and motion-derived feedforward. |
-| Q6 | `user/app/q6/`, `q45_vehicle_control.*` | Capture the ball's stable starting position or accept an explicit target, then perform target-relative closed-loop control. |
-| Hardware/protocol | `user/code/`, `user/bsp/` | X42S, vision UART framing, keys, display, motor/encoder/gyro, clocks, and debug telemetry. |
+| [视觉 Q1](车载平衡滚球运动控制系统/视觉Q1_MaixCamPro/) | MaixCam Pro、MaixCam Vision | YOLO 钢球检测、像素到厘米标定、卡尔曼滤波、稳定性判断、MJPEG 图传和串口发送。 |
+| [Q2–Q6 主控](车载平衡滚球运动控制系统/Q2-Q6_MSPM0主控/) | TI MSPM0G3507 | 循迹、钢球位置闭环、静态/动态车球控制、任意起点目标保持。 |
 
-The Q4/Q5/Q6 vehicle controller shares a state machine. Q6-specific target capture and tuning are guarded in the Q6 path; this repository intentionally does not advertise a wholesale redesign of the validated Q3–Q5 control laws.
+## 视觉与主控通信
 
-The Q2 route and Q6 start currently share the PB24 input behind `Q6_TASK_ENABLE`: when Q6 is enabled PB24 requests Q6; when disabled the existing standalone Q2 path uses PB24. The codebase contains both paths, but this macro means they are not both selected by that key in the same configuration.
+视觉端使用 `UART1`，主控使用 `UART3`；两端配置均为 115200 baud、8N1。通信帧为 `AA 55 01 type sequence length payload CRC16`，CRC 使用 Modbus CRC-16，低字节在前。视觉端以约 20 ms 的间隔发送 12 字节检测结果：位置、速度、时间戳、稳定标志、置信度和像素中心。主控端已按相同协议解析并校验该帧。
 
-Current source key map: PB21 stop, PB11 Q5, PB24 Q6/Q2 (compile-time selection), PA28 Q4, and PA31 Q3 zero/start flow. See [hardware notes](docs/hardware.md) before operating the board.
+接线：MaixCam Pro `A19 (UART1_TX)` 接 MSPM0 `PA25 (UART3_RX)`；MaixCam Pro `A18 (UART1_RX)` 可接 MSPM0 `PA26 (UART3_TX)`；两端必须共地，且均使用 3.3 V TTL 电平。
 
-## Demo videos
+## 演示视频
 
-The repository includes four hardware demonstration recordings:
+四段整机演示视频位于 [media/demos](media/demos/)：
 
 - [Demo 01](media/demos/demo-01.mp4)
 - [Demo 02](media/demos/demo-02.mp4)
 - [Demo 03](media/demos/demo-03.mp4)
 - [Demo 04](media/demos/demo-04.mp4)
 
-## Build prerequisites
+## 使用说明
 
-Install CMake 3.22 or newer, Ninja, and the Arm GNU toolchain. The current CMake presets are Windows-oriented. Set `ARM_GCC_ROOT` and `NINJA_ROOT` in the shell before configuring; the VS Code SysConfig helper also reads `MSPM0_SDK_ROOT` and `SYSCONFIG_ROOT` from a local `.env` file. Copy `.env.example` as a variable-name template; `.env` is ignored and must never be committed.
+请分别阅读两个子目录中的 README：视觉工程需要通过 MaixCam Vision 打开；主控工程的构建、烧录、按键映射和硬件说明均在 Q2–Q6 目录中。视觉工程中的 Wi-Fi 配置已留空，若需要 MJPEG 图传，请仅在自己设备上的 `main.py` 中填写网络信息，切勿将凭据提交到公开仓库。
 
-The optional serial capture utilities under `tools/` use pySerial. Install their pinned dependency with `python -m pip install -r tools/requirements.txt`; no vendored pySerial copy is part of the public source tree.
+## 赛题来源
 
-From a shell where those variables are available:
-
-```powershell
-$env:ARM_GCC_ROOT = "C:\Toolchains\arm-gnu-toolchain"
-$env:NINJA_ROOT = "C:\Tools\ninja"
-cmake --preset debug-armgcc
-cmake --build --preset build-debug
-```
-
-The project is Windows-oriented in its current CMake toolchain file. The commands above describe the checked-in build entrypoint. Q6 bench macros are distinct from the normal run configuration. Review `user/app/q6/q6_config.h` and the CMake cache before producing any image intended for hardware.
-
-For the software regression harnesses, install the pinned Python emulator dependencies with `python -m pip install -r tests/requirements.txt --upgrade --target build/testdeps`, then run the PowerShell runners listed in [testing and evidence](docs/testing.md). This does not exercise physical sensors, motors, wiring, or real-time timing.
-
-## Hardware and safety
-
-The current SysConfig assigns UART0 to `PRINT` (PA0/PA1), UART1 to `DEBUG` (PB6/PB7), UART2 to `GYRO` (PA21/PA24), UART3 to `VISION` (PA25/PA26), and TIMG6 to `Timer_Control`. Consult [hardware notes](docs/hardware.md) and the board wiring before connecting external devices; generated names and actual physical wiring must agree. Do not infer pin responsibilities from old logs.
-
-This firmware can move motors immediately after a start request. Keep the chassis mechanically supported, the ball path clear, and a physical power cutoff accessible. Never flash a bench auto-start image as a competition image.
-
-## Validation status
-
-The 2026-10-15 repair passed Debug and Release ARM builds and 7,111 checks across five software runners; Q5/Q6 also passed with O3 optimization. It fixes relocated build caches, Release finite-value checks, OLED bounds/on-off behavior, and Python dependency compatibility. See [the repair record](docs/repair-2026-10-15.md) for commands, resource sizes and remaining limitations. No flash or hardware trial was performed.
-
-The user reports Q5 and Q6 acceptance on hardware. In this audit, the four checked-in host runners passed (key input: 9 checks; telemetry: 14; Q5: 5,664; Q6 target and static-image harnesses: 235 and 39), and the Debug ARM image built successfully (Flash 100,968 / 131,072 bytes; SRAM 17,672 / 32,768 bytes). The exact accepted device image has not been linked to this source snapshot, and no flash or physical trial was performed during this audit. See [testing and evidence](docs/testing.md) for scope and caveats.
-
-## Documentation
-
-- [Architecture and module ownership](docs/architecture.md)
-- [Source and build baseline](docs/baseline.md)
-- [Hardware and peripheral ownership](docs/hardware.md)
-- [Control paths](docs/control-algorithm.md)
-- [Validation and evidence policy](docs/testing.md)
-- [Code style and formatting](docs/code-style.md)
-- [Debugging case studies](docs/debugging-case-studies.md)
-- [Known limitations](docs/known-limitations.md)
-- [Third-party notices](THIRD_PARTY_NOTICES.md)
-
-## Resume-ready project summary
-
-Implemented and tuned a bare-metal MSPM0G3507 ball-balancing control system for the 2026 NUEDC H problem, integrating UART-based vision feedback, X42S stepper control, state estimation, target capture, and Q2–Q6 task flows. Specific performance claims should be added only with the corresponding dated logs and hardware conditions.
+本仓库说明依据《2026 年全国大学生电子设计竞赛区赛（TI 杯）暨模拟电子系统设计专题赛选拔赛：车载平衡滚球运动控制系统（H 题）》整理。

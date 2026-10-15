@@ -1,0 +1,18 @@
+id: a
+name: a
+name[zh]: 钢珠检测器 314316
+version: 1.0.0
+author: a
+icon: app.png
+desc: 电赛H题视觉模块 - 高精度钢珠检测 + WiFi图传
+exclude:
+  - __pycache__
+  - build
+  - dist
+  - .gitignore
+files:
+  - app.yaml
+  - main.py
+  - model_314316.cvimodel
+  - model_314316.mud
+  - report.json
